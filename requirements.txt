@@ -1,0 +1,16 @@
+# Lecture et traitement du PDF
+pymupdf
+
+# Vectorisation sémantique
+sentence-transformers
+
+# Calcul de similarité cosinus
+scipy
+numpy
+
+# Appel au serveur LLaMA compatible OpenAI API
+openai
+
+beautifulsoup4
+
+requests
