@@ -1,7 +1,7 @@
 from orchestrator import handle_question
-from tools import rag
+from tools.utils import load_document
 
-rag.load_document("data")  # Chemin OK ici
+load_document("data")  # Chemin OK ici
 
 print("Assistant intelligent (RAG + SCRAP + OS)\n")
 

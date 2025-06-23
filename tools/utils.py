@@ -1,55 +1,34 @@
-import fitz  # PyMuPDF
-from sentence_transformers import SentenceTransformer
-import numpy as np
-from scipy.spatial.distance import cosine
-from openai import OpenAI
 import os
-import requests
+import fitz  # PyMuPDF
+import hashlib
+import pickle
+import numpy as np
+import torch
+from typing import List
+from tqdm import tqdm
 from bs4 import BeautifulSoup
+import requests
+from sentence_transformers import SentenceTransformer
+
+from openai import OpenAI
+from scipy.spatial.distance import cosine
+
+# Constantes
+MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+EMBEDDING_FILE = "vector_db.pkl"
+DOCUMENT_FOLDER = "data"
+
+# Variables globales
+CHUNKS = []
+EMBEDDINGS = []
+
+# Chargement modèle Camembert
+model = SentenceTransformer(MODEL_NAME)
+
+model.eval()
 
 
-
-def extract_chunks_from_folder(folder_path: str = "./documents") -> list[str]:
-    """
-    Parcourt tous les fichiers PDF d’un dossier et extrait chaque page comme un chunk,
-    en utilisant extract_chunks_from_pdf.
-    
-    Retourne une liste de strings formatés par page.
-    """
-    all_chunks = []
-    total_files = 0
-
-    for filename in os.listdir(folder_path):
-        if filename.lower().endswith(".pdf"):
-            total_files += 1
-            filepath = os.path.join(folder_path, filename)
-            chunks = extract_chunks_from_pdf(filepath)
-            all_chunks.extend(chunks)
-
-    print(f"\n {total_files} fichier(s) PDF traité(s), {len(all_chunks)} chunk(s) extraits au total.")
-    return all_chunks
-
-
-
-def extract_chunks_from_pdf(pdf_path: str) -> list[str]:
-    """Extrait chaque page d'un pdf comme un chunk entier, formaté avec nom de fichier et numéro de page."""
-    chunks = []
-    filename = os.path.basename(pdf_path)
-
-    try:
-        doc = fitz.open(pdf_path)
-        for i, page in enumerate(doc, start=1):
-            text = page.get_text().strip()
-            if text:  # ignorer les pages vides
-                chunk = f"Page {i} du fichier {filename}:\n{text}"
-                chunks.append(chunk)
-        doc.close()
-    except Exception as e:
-        print(f"Erreur dans le fichier {filename} : {e}")
-
-    return chunks
-
-
+# ============ Extraction ============
 
 def split_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
     """Découpe le texte en chunks"""
@@ -63,54 +42,125 @@ def split_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]
     return chunks
 
 
+def extract_chunks_from_pdf(pdf_path: str) -> List[dict]:
+    """Extrait chaque page comme un chunk avec métadonnées."""
+    chunks = []
+    filename = os.path.basename(pdf_path)
+
+    try:
+        doc = fitz.open(pdf_path)
+        for i, page in enumerate(doc, start=1):
+            text = page.get_text().strip()
+            if text:
+                chunks.append({"file": filename, "page": i, "text": text})
+        doc.close()
+    except Exception as e:
+        print(f"Erreur avec {filename} : {e}")
+
+    return chunks
 
 
+def extract_chunks_from_folder(folder_path: str) -> List[dict]:
+    """Parcourt tous les PDF du dossier et extrait les chunks."""
+    all_chunks = []
+    for filename in os.listdir(folder_path):
+        if filename.lower().endswith(".pdf"):
+            filepath = os.path.join(folder_path, filename)
+            all_chunks.extend(extract_chunks_from_pdf(filepath))
+    print(f"✅ Extraction terminée : {len(all_chunks)} chunks trouvés.")
+    return all_chunks
 
-def embed_texts(chunks: list[dict]) -> np.ndarray:
-    """Transforme une liste de chunks (avec 'text') en vecteurs."""
-    # Charge un modèle local pour encoder du texte en vecteurs
-    embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+# ============ Embedding & Base vectorielle ============
+
+def get_folder_hash(folder_path: str) -> str:
+    """Crée un hash MD5 unique basé sur le contenu des PDF."""
+    hash_md5 = hashlib.md5()
+    for filename in sorted(os.listdir(folder_path)):
+        if filename.lower().endswith(".pdf"):
+            with open(os.path.join(folder_path, filename), "rb") as f:
+                while chunk := f.read(8192):
+                    hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+
+def embed_texts(chunks: List[dict]) -> np.ndarray:
+    """Génère les embeddings SentenceTransformer des chunks."""
     texts = [chunk["text"] for chunk in chunks]
-    embeddings = embedder.encode(texts, convert_to_numpy=True, show_progress_bar=True)
+    embeddings = model.encode(texts, show_progress_bar=True, convert_to_numpy=True, normalize_embeddings=True)
     return embeddings
 
 
 
-def get_top_k_chunks(question: str, chunks: list[dict], chunk_embeddings: np.ndarray, k: int = 3) -> list[dict]:
-    """
-    Renvoie les k chunks les plus similaires à la question.
-    """
-    question_embedding = embed_texts([{"text": question}])[0]  # on simule un chunk dict ici
-    scores = []
-
-    for idx, chunk_vector in enumerate(chunk_embeddings):
-        similarity = 1 - cosine(question_embedding, chunk_vector)
-        scores.append((similarity, idx))
-
-    scores.sort(reverse=True)
-    top_chunks = [chunks[idx] for _, idx in scores[:k]]
-
-    return top_chunks
+def save_embeddings(chunks: List[dict], embeddings: np.ndarray, folder_hash: str):
+    with open(EMBEDDING_FILE, "wb") as f:
+        pickle.dump({
+            "chunks": chunks,
+            "embeddings": embeddings,
+            "hash": folder_hash
+        }, f)
+    print(f"💾 Embeddings sauvegardés dans {EMBEDDING_FILE}")
 
 
+def load_embeddings(expected_hash: str) -> bool:
+    global CHUNKS, EMBEDDINGS
+    if os.path.exists(EMBEDDING_FILE):
+        with open(EMBEDDING_FILE, "rb") as f:
+            data = pickle.load(f)
+            if data.get("hash") == expected_hash:
+                CHUNKS = data["chunks"]
+                EMBEDDINGS = data["embeddings"]
+                print(f"📂 Embeddings chargés depuis {EMBEDDING_FILE} ({len(CHUNKS)} chunks)")
+                return True
+            else:
+                print("⚠️ Les fichiers ont changé — recalcul des embeddings.")
+    return False
 
-# Configuration du client vers le serveur local
+
+def load_document(folder_path: str = DOCUMENT_FOLDER):
+    """Charge ou régénère les embeddings selon les fichiers PDF présents."""
+    global CHUNKS, EMBEDDINGS
+    folder_hash = get_folder_hash(folder_path)
+
+    if load_embeddings(expected_hash=folder_hash):
+        return
+
+    CHUNKS = extract_chunks_from_folder(folder_path)
+    EMBEDDINGS = embed_texts(CHUNKS)
+    save_embeddings(CHUNKS, EMBEDDINGS, folder_hash)
+
+
+# ============ Question & Similarité ============
+
+def get_top_k_chunks(question: str, k: int = 3) -> List[dict]:
+    """Renvoie les k chunks les plus similaires à la question."""
+    question_embedding = model.encode(question, convert_to_numpy=True, normalize_embeddings=True)
+
+    similarities = [
+        (1 - cosine(question_embedding, emb), idx)
+        for idx, emb in enumerate(EMBEDDINGS)
+    ]
+
+    similarities.sort(reverse=True)
+    return [CHUNKS[i] for _, i in similarities[:k]]
+
+
+
+# ============ LLM & Requête ============
+
 client = OpenAI(
-    base_url="http://127.0.0.1:8000",
-    api_key="llama-local"  # requis même s’il n’est pas utilisé
+    base_url="http://127.0.0.1:8080",
+    api_key="llama-local"
 )
 
-def query_llama(question: str, context_chunks: list[dict]) -> str:
-    """Construit le prompt avec des infos sur la source de chaque chunk."""
+def query_llama(question: str, context_chunks: List[dict]) -> str:
     context_text = "\n\n".join(
-        f"[{chunk.get('file', 'unknown')} - page {chunk.get('page', '?')}]:\n{chunk['text']}" for chunk in context_chunks
+        f"[{chunk.get('file')} - page {chunk.get('page')}]:\n{chunk['text']}" for chunk in context_chunks
     )
-
-
     system_prompt = (
         "Tu es un assistant intelligent. Tu réponds uniquement à la question, "
-        "sans réflexion, sans texte explicatif, sans balise <think>, "
-        "juste la réponse claire et concise basée sur les informations fournies :\n\n"
+        "sans réflexion, sans texte explicatif. "
+        "Voici les informations disponibles :\n\n"
         f"{context_text}"
     )
     response = client.chat.completions.create(
@@ -120,15 +170,14 @@ def query_llama(question: str, context_chunks: list[dict]) -> str:
             {"role": "user", "content": question}
         ],
         temperature=0.2,
-        max_tokens=512,
+        max_tokens=3000,
     )
+    return response.choices[0].message.content.strip()
 
-    return response.choices[0].message.content
 
-
+# ============ Web scraping utilitaire ============
 
 def scrap_url(url: str, min_paragraph_length: int = 50) -> str:
-    """Scrape une page web générique (Wikipédia ou autre)."""
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers)
@@ -138,7 +187,6 @@ def scrap_url(url: str, min_paragraph_length: int = 50) -> str:
         for tag in soup(['script', 'style', 'header', 'footer', 'nav', 'aside']):
             tag.decompose()
 
-        # Traitement spécial Wikipédia
         if "wikipedia.org" in url:
             for tag in soup.select(".reference, .infobox"):
                 tag.decompose()
@@ -149,6 +197,5 @@ def scrap_url(url: str, min_paragraph_length: int = 50) -> str:
         )
 
         return text.strip()
-
     except Exception as e:
-        return f"[ERREUR] Impossible de scrap {url} : {str(e)}"
+        return f"[ERREUR] Scraping échoué : {str(e)}"
