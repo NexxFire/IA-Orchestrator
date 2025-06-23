@@ -1,5 +1,5 @@
 import re
-from utils import scrap_url
+from tools.utils import scrap_url
 
 
 
@@ -27,8 +27,8 @@ def answer_question(question: str) -> str:
         with open(output_filename, "w", encoding="utf-8") as f:
             f.write(f"URL scrappée : {url}\n\n")
             f.write(scraped_text)
-        print(f"✅ Contenu complet sauvegardé dans le fichier : {output_filename}")
+        print(f"Contenu complet sauvegardé dans le fichier : {output_filename}")
     except Exception as e:
         return f"[ERREUR] Impossible d'écrire le fichier : {str(e)}"
 
-    return f"✅ Le contenu complet de la page a été sauvegardé dans '{output_filename}'."
+    return f"Le contenu complet de la page a été sauvegardé dans '{output_filename}'."

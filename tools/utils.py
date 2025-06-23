@@ -4,6 +4,8 @@ import numpy as np
 from scipy.spatial.distance import cosine
 from openai import OpenAI
 import os
+import requests
+from bs4 import BeautifulSoup
 
 
 
@@ -94,22 +96,23 @@ def get_top_k_chunks(question: str, chunks: list[dict], chunk_embeddings: np.nda
 
 # Configuration du client vers le serveur local
 client = OpenAI(
-    base_url="http://127.0.0.1:8080",
+    base_url="http://127.0.0.1:8000",
     api_key="llama-local"  # requis même s’il n’est pas utilisé
 )
 
 def query_llama(question: str, context_chunks: list[dict]) -> str:
     """Construit le prompt avec des infos sur la source de chaque chunk."""
     context_text = "\n\n".join(
-        f"[{chunk['file']} - page {chunk['page']}]:\n{chunk['text']}" for chunk in context_chunks
+        f"[{chunk.get('file', 'unknown')} - page {chunk.get('page', '?')}]:\n{chunk['text']}" for chunk in context_chunks
     )
+
 
     system_prompt = (
-        "Tu es un assistant intelligent. Tu vas répondre à la question de l'utilisateur "
-        "en te basant uniquement sur les informations suivantes extraites d'un document :\n\n"
+        "Tu es un assistant intelligent. Tu réponds uniquement à la question, "
+        "sans réflexion, sans texte explicatif, sans balise <think>, "
+        "juste la réponse claire et concise basée sur les informations fournies :\n\n"
         f"{context_text}"
     )
-
     response = client.chat.completions.create(
         model="Qwen3-14B-Q6_K.gguf",
         messages=[
