@@ -10,6 +10,7 @@ def prompt_orchestrator_llm(question: str) -> str:
         "- 'rag' : pour répondre à partir de documents PDF internes\n"
         "- 'scrap' : pour répondre en extrayant des infos depuis une URL\n"
         "- 'scrap_to_file' : pour extraire une URL ET enregistrer le résultat dans un fichier\n\n"
+        "- 'llm' : pour répondre a la question avec un appel llm classique, a utiliser si aucun autre outils n'est possible\n\n"
         "Les sujets couverts par le rag sont :\n"
         "- Des généralité sur les bases de données\n"
         "- La modulation AM-P\n"
@@ -75,6 +76,11 @@ def handle_question(question: str) -> str:
         elif chosen_tool == "rag":
             # Appelle RAG, qui répond sans <think> grâce au prompt modifié
             return rag.answer_question(question)
+        
+        elif chosen_tool == "llm":
+            # Appelle LLM directement pour répondre à la question
+            response = query_llama(question, context_chunks=[])
+            return response
 
         else:
             return f"[Orchestrator] Outil non reconnu : {chosen_tool}"

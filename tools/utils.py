@@ -67,7 +67,7 @@ def extract_chunks_from_folder(folder_path: str) -> List[dict]:
         if filename.lower().endswith(".pdf"):
             filepath = os.path.join(folder_path, filename)
             all_chunks.extend(extract_chunks_from_pdf(filepath))
-    print(f"✅ Extraction terminée : {len(all_chunks)} chunks trouvés.")
+    print(f"Extraction terminée : {len(all_chunks)} chunks trouvés.")
     return all_chunks
 
 
@@ -99,7 +99,7 @@ def save_embeddings(chunks: List[dict], embeddings: np.ndarray, folder_hash: str
             "embeddings": embeddings,
             "hash": folder_hash
         }, f)
-    print(f"💾 Embeddings sauvegardés dans {EMBEDDING_FILE}")
+    print(f"Embeddings sauvegardés dans {EMBEDDING_FILE}")
 
 
 def load_embeddings(expected_hash: str) -> bool:
@@ -110,10 +110,10 @@ def load_embeddings(expected_hash: str) -> bool:
             if data.get("hash") == expected_hash:
                 CHUNKS = data["chunks"]
                 EMBEDDINGS = data["embeddings"]
-                print(f"📂 Embeddings chargés depuis {EMBEDDING_FILE} ({len(CHUNKS)} chunks)")
+                print(f"Embeddings chargés depuis {EMBEDDING_FILE} ({len(CHUNKS)} chunks)")
                 return True
             else:
-                print("⚠️ Les fichiers ont changé — recalcul des embeddings.")
+                print("Les fichiers ont changé — recalcul des embeddings.")
     return False
 
 
@@ -132,7 +132,7 @@ def load_document(folder_path: str = DOCUMENT_FOLDER):
 
 # ============ Question & Similarité ============
 
-def get_top_k_chunks(question: str, k: int = 3) -> List[dict]:
+def get_top_k_chunks(question: str, k: int = 5) -> List[dict]:
     """Renvoie les k chunks les plus similaires à la question."""
     question_embedding = model.encode(question, convert_to_numpy=True, normalize_embeddings=True)
 
