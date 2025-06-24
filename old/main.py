@@ -14,7 +14,7 @@ while True:
         break
 
     # 3.1 Obtenir les k chunks les plus pertinents
-    top_chunks = get_top_k_chunks(question, chunks, embeddings, k=5)
+    top_chunks = get_top_k_chunks(question, k=5)
 
     # 3.2 Requête à LLaMA
     response = query_llama(question, top_chunks)

@@ -19,5 +19,5 @@ def answer_question(question: str) -> str:
     chunks = split_text(text)
     chunk_dicts = [{"text": c} for c in chunks]
     embeddings = embed_texts(chunk_dicts)
-    top_chunks = get_top_k_chunks(question, chunk_dicts, embeddings)
+    top_chunks = get_top_k_chunks(question)
     return query_llama(question, top_chunks)
